@@ -76,7 +76,8 @@ for idx = 1:numel(qValues)
 
     [xeq, veq, seq, heq, feq] = cont(@equilibrium, x0, v0, optEQ);
 
-    hopfIdx = find(strcmp({seq.label}, 'H'), 1);
+    labels = cellfun(@(s) strtrim(char(s)), {seq.label}, 'UniformOutput', false);
+    hopfIdx = find(strcmp(labels, 'H'), 1);
     if isempty(hopfIdx)
         fprintf('  No Hopf point detected on the equilibrium curve for Q = %.2f.\n', Q);
         continue;
