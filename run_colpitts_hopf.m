@@ -6,7 +6,48 @@ function run_colpitts_hopf
 %  continuation from the Hopf point, and inspects Floquet multipliers to infer
 %  stability. The procedure is repeated over a grid of Q values in [0.5, 3].
 
-init;
+rootDir = fileparts(mfilename('fullpath'));
+matcontRoot = locate_matcont_root(rootDir);
+
+prevDir = pwd;
+cleanupDir = onCleanup(@() cd(prevDir));
+cd(matcontRoot);
+
+prevPath = path;
+cleanupPath = onCleanup(@() path(prevPath)); %#ok<NASGU>
+
+% Ensure the MatCont copy distributed with this script is at the top of the path.
+addpath(matcontRoot, '-begin');
+subdirs = {'Continuer','Equilibrium','LimitCycle','PeriodDoubling','Systems', ...
+    'LimitPoint','Hopf','LimitPointCycle','NeimarkSacker','BranchPoint', ...
+    'BranchPointCycle','Homoclinic','HomoclinicSaddleNode','HomotopySaddle', ...
+    'HomotopySaddleNode','HomotopyHet','Heteroclinic','MultilinearForms', ...
+    'Help','LimitCycleCodim2','SBML','Lyapunov','Testruns', ...
+    fullfile('Testruns','TestSystems')};
+for k = 1:numel(subdirs)
+    dirPath = fullfile(matcontRoot, subdirs{k});
+    if exist(dirPath, 'dir')
+        addpath(dirPath, '-begin');
+    else
+        warning('run_colpitts_hopf:missingDir', ...
+            'Expected MatCont subdirectory "%s" is missing (searched in %s).', ...
+            subdirs{k}, matcontRoot);
+    end
+end
+
+% Call the bundled init to compile collocation binaries when needed.
+if exist(fullfile(matcontRoot, 'init.m'), 'file') ~= 2
+    error('MatCont init.m could not be located in %s.', matcontRoot);
+end
+init();
+
+requiredFns = {'init_EP_EP','cont','cpl','init_H_LC'};
+for k = 1:numel(requiredFns)
+    if exist(requiredFns{k}, 'file') ~= 2
+        error('Required MatCont function "%s" is unavailable after init().', requiredFns{k});
+    end
+end
+
 odefile = @colpitts;
 qValues = 0.5:0.5:3;
 ntst = 40;
@@ -61,7 +102,12 @@ for idx = 1:numel(qValues)
     xlabel('g'); ylabel('x'); title(sprintf('Equilibria for Q = %.2f', Q));
 
     pHopf = [gHopf; Q];
-    [xlc0, vlc0] = init_H_LC(odefile, xHopf, pHopf, ap, amp, ntst, ncol);
+    try
+        [xlc0, vlc0] = init_H_LC(odefile, xHopf, pHopf, ap, amp, ntst, ncol);
+    catch ME
+        warning('Limit-cycle initialization failed for Q = %.2f: %s', Q, ME.message);
+        continue;
+    end
 
     optLC = contset;
     optLC = contset(optLC, 'MaxNumPoints', 200);
@@ -69,7 +115,12 @@ for idx = 1:numel(qValues)
     optLC = contset(optLC, 'IgnoreSingularity', 1);
     optLC = contset(optLC, 'Adapt', 1);
 
-    [xlc, vlc, slc, hlc, flc] = cont(@limitcycle, xlc0, vlc0, optLC);
+    try
+        [xlc, vlc, slc, hlc, flc] = cont(@limitcycle, xlc0, vlc0, optLC);
+    catch ME
+        warning('Limit-cycle continuation failed for Q = %.2f: %s', Q, ME.message);
+        continue;
+    end
 
     figure('Name', sprintf('Limit cycles Q=%.2f', Q));
     cpl(xlc, vlc, slc, [size(xlc,1) 1]);
@@ -159,4 +210,26 @@ if cond
 else
     out = b;
 end
+end
+
+% -------------------------------------------------------------------------
+function matcontRoot = locate_matcont_root(startDir)
+candidate = startDir;
+maxLevels = 6;
+for k = 1:maxLevels
+    if exist(fullfile(candidate, 'init.m'), 'file') && ...
+            exist(fullfile(candidate, 'Continuer'), 'dir')
+        matcontRoot = candidate;
+        return;
+    end
+    parent = fileparts(candidate);
+    if isempty(parent) || strcmp(parent, candidate)
+        break;
+    end
+    candidate = parent;
+end
+
+error(['Could not locate a MatCont installation starting from %s. ', ...
+    'Place run_colpitts_hopf.m inside the MatCont folder hierarchy or ', ...
+    'adjust locate_matcont_root to point to your installation.'], startDir);
 end
