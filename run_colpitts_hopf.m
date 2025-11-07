@@ -6,39 +6,7 @@ function run_colpitts_hopf
 %  continuation from the Hopf point, and inspects Floquet multipliers to infer
 %  stability. The procedure is repeated over a grid of Q values in [0.5, 3].
 
-rootDir = fileparts(mfilename('fullpath'));
-prevDir = pwd;
-cleanupDir = onCleanup(@() cd(prevDir));
-cd(rootDir);
-
-prevPath = path;
-cleanupPath = onCleanup(@() path(prevPath)); %#ok<NASGU>
-
-% Ensure the MatCont copy distributed with this script is at the top of the path.
-addpath(rootDir, '-begin');
-subdirs = {'Continuer','Equilibrium','LimitCycle','PeriodDoubling','Systems', ...
-    'LimitPoint','Hopf','LimitPointCycle','NeimarkSacker','BranchPoint', ...
-    'BranchPointCycle','Homoclinic','HomoclinicSaddleNode','HomotopySaddle', ...
-    'HomotopySaddleNode','HomotopyHet','Heteroclinic','MultilinearForms', ...
-    'Help','LimitCycleCodim2','SBML','Lyapunov','Testruns', ...
-    fullfile('Testruns','TestSystems')};
-for k = 1:numel(subdirs)
-    addpath(fullfile(rootDir, subdirs{k}), '-begin');
-end
-
-% Call the bundled init to compile collocation binaries when needed.
-if exist('init', 'file') ~= 2
-    error('MatCont init.m could not be located in %s.', rootDir);
-end
-init();
-
-requiredFns = {'init_EP_EP','cont','cpl','init_H_LC'};
-for k = 1:numel(requiredFns)
-    if exist(requiredFns{k}, 'file') ~= 2
-        error('Required MatCont function "%s" is unavailable after init().', requiredFns{k});
-    end
-end
-
+init;
 odefile = @colpitts;
 qValues = 0.5:0.5:3;
 ntst = 40;
@@ -93,12 +61,7 @@ for idx = 1:numel(qValues)
     xlabel('g'); ylabel('x'); title(sprintf('Equilibria for Q = %.2f', Q));
 
     pHopf = [gHopf; Q];
-    try
-        [xlc0, vlc0] = init_H_LC(odefile, xHopf, pHopf, ap, amp, ntst, ncol);
-    catch ME
-        warning('Limit-cycle initialization failed for Q = %.2f: %s', Q, ME.message);
-        continue;
-    end
+    [xlc0, vlc0] = init_H_LC(odefile, xHopf, pHopf, ap, amp, ntst, ncol);
 
     optLC = contset;
     optLC = contset(optLC, 'MaxNumPoints', 200);
@@ -106,12 +69,7 @@ for idx = 1:numel(qValues)
     optLC = contset(optLC, 'IgnoreSingularity', 1);
     optLC = contset(optLC, 'Adapt', 1);
 
-    try
-        [xlc, vlc, slc, hlc, flc] = cont(@limitcycle, xlc0, vlc0, optLC);
-    catch ME
-        warning('Limit-cycle continuation failed for Q = %.2f: %s', Q, ME.message);
-        continue;
-    end
+    [xlc, vlc, slc, hlc, flc] = cont(@limitcycle, xlc0, vlc0, optLC);
 
     figure('Name', sprintf('Limit cycles Q=%.2f', Q));
     cpl(xlc, vlc, slc, [size(xlc,1) 1]);
